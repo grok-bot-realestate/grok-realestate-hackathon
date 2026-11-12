@@ -19,4 +19,4 @@ npx vercel --prod   # production
 
 Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the Vercel project env (same values as `SUPABASE_URL` / `SUPABASE_ANON_KEY`).
 
-Vercel deploys are authored as lucasmalik04@gmail.com.
+Vercel deploys are authored as lucasmalik04@gmail.com so the Git integration accepts the commit.
