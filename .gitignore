@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 !.env*.example
+# Cognee Cloud puts API key in mcp.json — keep it local
+.cursor/mcp.json
 *.pem
 *.key
 *.p12
@@ -26,55 +28,26 @@ auth.json
 api_keys*
 .api_keys*
 
-# --- OS / editor ---
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
+# --- MSCI / Cortile / RCA compliance (never commit sponsor datasets) ---
+data/
+datasets/
+*msci*
+*rca*
+*cortile*
+*MSCI*
+*RCA*
+*Cortile*
+*CORTILE*
 
-# --- Node / Next ---
-node_modules/
-.npm/
-.pnpm-store/
-.next/
-out/
-dist/
-build/
-coverage/
-.turbo/
-*.tsbuildinfo
-
-# --- Python ---
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-
-# --- Docker / local runtime ---
-*.log
-logs/
-tmp/
-.temp/
-.cache/
-
-# --- Large raw hackathon data (PDFs, scans, dumps) ---
-data/raw/
-data/uploads/
-uploads/
-raw/
+# --- Large raw hackathon data ---
 *.pdf
 *.PDF
 *.docx
 *.DOCX
 *.xlsx
 *.XLSX
+*.xls
+*.XLS
 *.csv
 *.CSV
 *.parquet
@@ -93,12 +66,54 @@ raw/
 *.db
 *.dump
 *.sql.gz
+uploads/
+raw/
 
 # Keep tiny fixtures if added later under fixtures/
+!fixtures/
 !fixtures/**
 !fixtures/**/*.pdf
 !fixtures/**/*.csv
 !fixtures/**/*.xlsx
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Node / Next / Vite / Vercel ---
+node_modules/
+.npm/
+.pnpm-store/
+.next/
+out/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+.vercel/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Docker / local runtime ---
+*.log
+logs/
+tmp/
+.temp/
+.cache/
 
 # --- ML / model weights ---
 *.pt

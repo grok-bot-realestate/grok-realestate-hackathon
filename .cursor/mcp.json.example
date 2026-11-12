@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:SUPABASE_ACCESS_TOKEN}"
+      }
+    },
+    "Parallel": {
+      "url": "https://mcp.parallel.ai/mcp"
+    },
+    "cognee": {
+      "command": "uvx",
+      "args": ["cognee-mcp@0.5.6"],
+      "env": {
+        "COGNEE_BASE_URL": "https://YOUR_TENANT.aws.cognee.ai",
+        "COGNEE_API_KEY": "YOUR_COGNEE_API_KEY"
+      }
+    }
+  }
+}
