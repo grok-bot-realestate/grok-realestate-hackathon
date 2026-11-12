@@ -62,33 +62,33 @@ export default function LiveCallDock({
   return (
     <section
       aria-live="polite"
-      className="rise-in mt-4 border border-[var(--ink)]/25 bg-[var(--ink)] text-[var(--fog)]"
+      className="rise-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[var(--shadow-elevated)]"
     >
-      <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-3.5">
         <div className="flex items-center gap-3.5">
           <span
-            className={`inline-block size-2.5 shrink-0 rounded-[2px] ${
+            className={`inline-block size-2.5 shrink-0 rounded-full ${
               phase === 'live'
-                ? 'live-dot bg-[#6ce0b8]'
+                ? 'live-dot bg-emerald-500'
                 : phase === 'processing'
-                  ? 'live-dot bg-[#f3c669]'
-                  : 'live-dot bg-white/75'
+                  ? 'live-dot bg-amber-500'
+                  : 'live-dot bg-sky-500'
             }`}
           />
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="font-mono text-[11px] font-medium tracking-[0.16em] text-white/70 uppercase">
+              <span className="font-mono text-[11px] font-medium tracking-wider text-sky-600 uppercase">
                 {phase === 'connecting'
                   ? 'Connecting'
                   : phase === 'live'
                     ? 'Live · Property Line'
                     : 'Post-call Triage'}
               </span>
-              <span className="font-mono text-xs text-white/90 tabular-nums">
+              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-medium text-slate-700 tabular-nums">
                 {formatElapsed(elapsedSeconds)}
               </span>
             </div>
-            <p className="mt-0.5 text-sm font-medium text-white">{speakerLabel}</p>
+            <p className="mt-0.5 text-sm font-semibold text-slate-900">{speakerLabel}</p>
           </div>
         </div>
 
@@ -109,12 +109,12 @@ export default function LiveCallDock({
                   <span
                     key={idx}
                     style={{ height: `${heightPct}%` }}
-                    className={`w-1 rounded-[1px] transition-all duration-100 ${
+                    className={`w-1 rounded-full transition-all duration-100 ${
                       assistantSpeaking
-                        ? 'bg-[#6ce0b8]'
+                        ? 'bg-sky-500'
                         : muted
-                          ? 'bg-white/25'
-                          : 'bg-white/80'
+                          ? 'bg-slate-200'
+                          : 'bg-slate-700'
                     }`}
                   />
                 )
@@ -128,10 +128,10 @@ export default function LiveCallDock({
                 type="button"
                 onClick={onToggleMute}
                 aria-pressed={muted}
-                className={`border px-3 py-1.5 font-mono text-xs font-medium transition ${
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                   muted
-                    ? 'border-[#f3c669]/60 bg-[#f3c669]/15 text-[#f3c669]'
-                    : 'border-white/25 bg-white/5 text-white hover:bg-white/15'
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 {muted ? 'Unmute mic (m)' : 'Mute mic (m)'}
@@ -142,7 +142,7 @@ export default function LiveCallDock({
               <button
                 type="button"
                 onClick={onHangUp}
-                className="bg-[var(--urgent)] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#991b13]"
+                className="rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
               >
                 Hang up
               </button>
@@ -152,7 +152,7 @@ export default function LiveCallDock({
               <button
                 type="button"
                 onClick={onDismissProcessing}
-                className="border border-white/25 px-3 py-1.5 font-mono text-xs text-white/80 transition hover:border-white/50 hover:text-white"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
               >
                 Hide
               </button>
@@ -162,13 +162,13 @@ export default function LiveCallDock({
       </div>
 
       {/* Live Streaming Captions / Triage progress */}
-      <div className="border-t border-white/12 bg-black/15 px-4 py-3 sm:px-5">
+      <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-3">
         {phase === 'processing' ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-white/80">
-              Vapi webhook is saving the call and extracting property, safety check, priority, and next action. The new record will select automatically once it lands.
+            <p className="text-xs leading-5 text-slate-600">
+              Saving call and running Grok triage for property, safety check, priority, and next action. The new record will select automatically once it lands.
             </p>
-            <span className="shrink-0 font-mono text-[11px] text-[#6ce0b8]">
+            <span className="shrink-0 font-mono text-[11px] font-medium text-emerald-600">
               Listening on Realtime…
             </span>
           </div>
@@ -178,7 +178,7 @@ export default function LiveCallDock({
             className="lane-scroll max-h-36 space-y-2 overflow-y-auto pr-1 text-xs leading-5"
           >
             {captions.length === 0 && !partialCaption && (
-              <p className="font-mono text-[11px] text-white/55">
+              <p className="font-mono text-[11px] text-slate-400">
                 {phase === 'connecting'
                   ? 'Requesting microphone access and joining Morning Lane assistant…'
                   : 'Live captions will stream here as soon as speech begins…'}
@@ -188,26 +188,26 @@ export default function LiveCallDock({
             {captions.map((turn) => (
               <div key={turn.id} className="flex items-baseline gap-2.5">
                 <span
-                  className={`w-24 shrink-0 font-mono text-[10px] font-medium tracking-[0.12em] uppercase ${
-                    turn.speaker === 'assistant' ? 'text-[#6ce0b8]' : 'text-[#f3c669]'
+                  className={`w-24 shrink-0 font-mono text-[10px] font-semibold tracking-wider uppercase ${
+                    turn.speaker === 'assistant' ? 'text-sky-600' : 'text-slate-900'
                   }`}
                 >
                   {turn.speaker === 'assistant' ? 'Morning Lane' : 'Caller'}
                 </span>
-                <span className="text-white/92">{turn.text}</span>
+                <span className="text-slate-700">{turn.text}</span>
               </div>
             ))}
 
             {partialCaption && (
-              <div className="flex items-baseline gap-2.5 opacity-80">
+              <div className="flex items-baseline gap-2.5 opacity-75">
                 <span
-                  className={`w-24 shrink-0 font-mono text-[10px] font-medium tracking-[0.12em] uppercase ${
-                    partialCaption.speaker === 'assistant' ? 'text-[#6ce0b8]' : 'text-[#f3c669]'
+                  className={`w-24 shrink-0 font-mono text-[10px] font-semibold tracking-wider uppercase ${
+                    partialCaption.speaker === 'assistant' ? 'text-sky-600' : 'text-slate-900'
                   }`}
                 >
                   {partialCaption.speaker === 'assistant' ? 'Morning Lane' : 'Caller'}
                 </span>
-                <span className="italic text-white/80">{partialCaption.text}…</span>
+                <span className="italic text-slate-600">{partialCaption.text}…</span>
               </div>
             )}
           </div>

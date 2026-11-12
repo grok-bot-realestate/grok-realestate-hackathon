@@ -2,32 +2,36 @@
 
 :root {
   color-scheme: light;
-  --ink: #18312a;
-  --ink-soft: #24463c;
-  --fog: #edf3ef;
-  --wash: #d7e4dc;
-  --lane: #2a6b58;
-  --lane-deep: #1f4f42;
-  --urgent: #b42318;
-  --urgent-bg: rgba(180, 35, 24, 0.08);
-  --amber: #9a6700;
-  --amber-bg: rgba(154, 103, 0, 0.09);
-  --quiet: #5e726a;
-  --line: rgba(24, 49, 42, 0.13);
-  --line-strong: rgba(24, 49, 42, 0.24);
-  --paper: rgba(255, 255, 255, 0.62);
-  --paper-strong: rgba(255, 255, 255, 0.84);
-  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
-  --font-body: "IBM Plex Sans", "Helvetica Neue", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-family: var(--font-body);
+  --canvas: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-subtle: #F1F5F9;
+  --ink: #0F172A;
+  --ink-secondary: #475569;
+  --ink-muted: #64748B;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --accent: #0284C7;
+  --accent-soft: #E0F2FE;
+  --urgent: #DC2626;
+  --urgent-bg: #FEF2F2;
+  --amber: #D97706;
+  --amber-bg: #FFFBEB;
+  --done: #059669;
+  --done-bg: #ECFDF5;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-elevated: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 10px -6px rgba(15, 23, 42, 0.04);
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
   color: var(--ink);
-  background: var(--fog);
+  background: var(--canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -39,23 +43,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(1200px 540px at 10% -8%, rgba(42, 107, 88, 0.16), transparent 58%),
-    radial-gradient(900px 460px at 94% 6%, rgba(154, 103, 0, 0.09), transparent 55%),
-    linear-gradient(180deg, #e8f1eb 0%, var(--fog) 44%, #e2ebe5 100%);
-  background-attachment: fixed;
-}
-
-body::before {
-  content: "";
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  opacity: 0.36;
-  background-image:
-    linear-gradient(rgba(24, 49, 42, 0.032) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 49, 42, 0.032) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent 82%);
+    radial-gradient(960px 380px at 50% -6%, rgba(2, 132, 199, 0.055), transparent 65%),
+    var(--canvas);
 }
 
 #root {
@@ -68,8 +57,8 @@ a {
   cursor: pointer;
 }
 
-.font-display {
-  font-family: var(--font-display);
+.font-sans {
+  font-family: var(--font-sans);
 }
 
 .font-mono {
@@ -80,17 +69,18 @@ a {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1;
-  padding: 2px 5px;
-  border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--ink);
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--ink-secondary);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -106,35 +96,35 @@ a {
   }
   50% {
     transform: scale(1.35);
-    opacity: 0.52;
+    opacity: 0.55;
   }
 }
 
 @keyframes arrive {
   from {
-    background: rgba(42, 107, 88, 0.22);
+    background-color: #E0F2FE;
   }
   to {
-    background: transparent;
+    background-color: transparent;
   }
 }
 
-@keyframes soft-breathe {
+@keyframes call-ring {
   0%,
   100% {
-    box-shadow: inset 0 0 0 1px rgba(42, 107, 88, 0.22);
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.25);
   }
   50% {
-    box-shadow: inset 0 0 0 1px rgba(42, 107, 88, 0.52);
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
   }
 }
 
 .rise-in {
-  animation: rise-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .rise-in-delay {
-  animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+  animation: rise-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
 }
 
 .live-dot {
@@ -142,14 +132,14 @@ a {
 }
 
 .row-fresh {
-  animation: arrive 5s ease-out;
+  animation: arrive 4.5s ease-out;
 }
 
 .call-live {
-  animation: soft-breathe 1.6s ease-in-out infinite;
+  animation: call-ring 1.8s ease-in-out infinite;
 }
 
-/* Subtle architectural scrollbars */
+/* Clean product scrollbars */
 .lane-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -160,12 +150,12 @@ a {
 }
 
 .lane-scroll::-webkit-scrollbar-thumb {
-  background: rgba(24, 49, 42, 0.18);
-  border-radius: 3px;
+  background: #CBD5E1;
+  border-radius: 9999px;
 }
 
 .lane-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(24, 49, 42, 0.32);
+  background: #94A3B8;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -18,9 +18,13 @@ class Boundary extends Component<{ children: ReactNode }, BoundaryState> {
     if (this.state.error) {
       return (
         <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-16">
-          <p className="font-display text-5xl font-semibold tracking-tight text-[var(--ink)]">Line</p>
-          <p className="mt-3 text-sm text-[var(--quiet)]">Morning Lane could not open the inbox.</p>
-          <p className="mt-4 text-sm text-[var(--urgent)]">{this.state.error}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <p className="text-3xl font-bold tracking-tight text-slate-900">Line</p>
+            <p className="mt-2 text-sm text-slate-600">Morning Lane could not open the inbox.</p>
+            <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+              {this.state.error}
+            </p>
+          </div>
         </main>
       )
     }
@@ -36,17 +40,21 @@ function MissingConfig() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-16">
-      <p className="font-display text-5xl font-semibold tracking-tight text-[var(--ink)]">Line</p>
-      <p className="mt-2 text-base text-[var(--quiet)]">Morning Lane branch</p>
-      <p className="mt-6 text-sm leading-6 text-[var(--ink)]">
-        This build is missing required environment variables, so the inbox cannot load.
-      </p>
-      {missing.length > 0 && (
-        <p className="mt-3 font-mono text-xs text-[var(--urgent)]">{missing.join(', ')}</p>
-      )}
-      <p className="mt-4 text-sm text-[var(--quiet)]">
-        Set the Vite keys in Vercel, then redeploy. Never ship a silent white screen.
-      </p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <p className="text-3xl font-bold tracking-tight text-slate-900">Line</p>
+        <p className="mt-1 text-sm text-slate-500">Morning Lane · Hackney E8</p>
+        <p className="mt-5 text-sm leading-6 text-slate-800">
+          This build is missing required environment variables, so the inbox cannot load.
+        </p>
+        {missing.length > 0 && (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-700">
+            {missing.join(', ')}
+          </p>
+        )}
+        <p className="mt-4 text-xs text-slate-500">
+          Set the Vite keys in Vercel, then redeploy.
+        </p>
+      </div>
     </main>
   )
 }
