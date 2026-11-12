@@ -90,7 +90,7 @@ Read this in 2 minutes right before going on stage or hitting record.
 
 * **Live App:** https://grok-realestate-hackathon.vercel.app
 * **GitHub Repo:** https://github.com/grok-bot-realestate/grok-realestate-hackathon
-* **Vapi Assistant ID:** `cc69bf2f-455f-4ea4-b72a-40d53c2e4874`
+* **Vapi Assistant ID:** `49706505-1c69-43ce-95ed-a31626602abc`
 * *(No API keys or secrets are stored here—all keys live securely in Supabase runtime secrets & Vercel env vars.)*
 
 ### Quick Pre-Submission Checklist (Before 23:00 Freeze)
