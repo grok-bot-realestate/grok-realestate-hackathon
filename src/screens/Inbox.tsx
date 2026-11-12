@@ -22,6 +22,19 @@ function matches(row: InboxRecord, filter: InboxFilter): boolean {
   return true
 }
 
+function priorityTone(priority: string): string {
+  if (priority === 'urgent') return 'bg-[var(--urgent)]'
+  if (priority === 'today') return 'bg-[var(--amber)]'
+  return 'bg-[var(--quiet)]'
+}
+
+function callLabel(phase: CallPhase): string {
+  if (phase === 'connecting') return 'Connecting…'
+  if (phase === 'live') return 'On the line · Hang up'
+  if (phase === 'processing') return 'Processing…'
+  return 'Call the line'
+}
+
 type Props = {
   rows: InboxRecord[]
   kpi: Kpi | null
@@ -57,95 +70,136 @@ export default function Inbox({
 }: Props) {
   const visible = rows.filter((row) => matches(row, filter))
   const onCallNow = phase === 'live' || phase === 'connecting'
+  const calls = kpi?.calls ?? 0
 
   return (
-    <div className="mx-auto min-h-screen max-w-3xl px-4 py-8 sm:px-6">
-      <header className="flex flex-col gap-4 border-b border-black/10 pb-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--ink)]">
-            Line Inbox · Morning Lane branch
-          </h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {kpi
-              ? `${kpi.calls ?? 0} ${(kpi.calls ?? 0) === 1 ? 'call' : 'calls'} · ${kpi.out_of_hours_pct ?? 0}% out of hours`
-              : 'London lettings · after-hours line'}
-          </p>
+    <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
+      <header className="rise-in border-b border-[var(--line)] pb-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-medium tracking-[0.22em] text-[var(--lane)] uppercase">
+              Morning Lane
+            </p>
+            <h1 className="font-display mt-2 text-5xl leading-none font-semibold tracking-tight text-[var(--ink)] sm:text-6xl">
+              Line
+            </h1>
+            <p className="mt-3 max-w-md text-sm leading-6 text-[var(--quiet)]">
+              {kpi
+                ? `${calls} ${calls === 1 ? 'call' : 'calls'} logged · ${kpi.out_of_hours_pct ?? 0}% out of hours`
+                : 'After-hours lettings line for the Morning Lane branch.'}
+            </p>
+          </div>
+
+          <div className="rise-in-delay flex flex-col items-stretch gap-3 sm:items-end">
+            <p className="flex items-center gap-2 text-sm text-[var(--quiet)]">
+              <span className="live-dot inline-block size-2 rounded-[2px] bg-[var(--lane)]" />
+              Live · {freshCount} new since open
+            </p>
+            {onCallNow ? (
+              <button
+                type="button"
+                onClick={onHangUp}
+                className={`call-live bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-[var(--fog)] transition hover:bg-[var(--lane-deep)] ${
+                  phase === 'live' ? '' : ''
+                }`}
+              >
+                {callLabel(phase)}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onCall}
+                disabled={!callReady || phase === 'processing'}
+                className="bg-[var(--lane)] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--lane-deep)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {callLabel(phase)}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-[var(--muted)]">
-            <span className="mr-1 inline-block size-2 rounded-full bg-[var(--accent)] align-middle" />
-            Live · {freshCount} new since you opened
-          </p>
-          {onCallNow ? (
+
+        {(phase === 'processing' || callError || !callReady) && (
+          <div className="mt-5 space-y-2">
+            {phase === 'processing' && (
+              <p className="border border-[var(--lane)]/25 bg-[var(--wash)]/70 px-3 py-2 text-sm text-[var(--ink)]">
+                Processing the call. It should land in the inbox within half a minute.
+              </p>
+            )}
+            {callError && (
+              <p className="border border-[var(--urgent)]/25 bg-white/60 px-3 py-2 text-sm text-[var(--urgent)]">
+                {callError}
+              </p>
+            )}
+            {!callReady && (
+              <p className="text-sm text-[var(--quiet)]">
+                The voice line is not configured in this build (`VITE_VAPI_PUBLIC_KEY` /
+                `VITE_VAPI_ASSISTANT_ID`).
+              </p>
+            )}
+          </div>
+        )}
+      </header>
+
+      <nav className="rise-in-delay mt-6 flex gap-1 overflow-x-auto border-b border-[var(--line)] pb-px" aria-label="Inbox filters">
+        {FILTERS.map((item) => {
+          const active = filter === item.id
+          return (
             <button
+              key={item.id}
               type="button"
-              onClick={onHangUp}
-              className="rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white"
+              onClick={() => onFilter(item.id)}
+              className={`shrink-0 border-b-2 px-3 py-2 text-sm transition ${
+                active
+                  ? 'border-[var(--ink)] font-medium text-[var(--ink)]'
+                  : 'border-transparent text-[var(--quiet)] hover:text-[var(--ink)]'
+              }`}
             >
-              {phase === 'connecting' ? 'Connecting…' : 'Live · on a call'} · Hang up
+              {item.label}
             </button>
-          ) : (
+          )
+        })}
+      </nav>
+
+      {status === 'loading' && (
+        <div className="mt-12 space-y-4" aria-live="polite">
+          <p className="text-sm text-[var(--quiet)]">Loading the inbox…</p>
+          <div className="h-px w-full origin-left animate-pulse bg-[var(--line)]" />
+          <div className="h-px w-4/5 origin-left animate-pulse bg-[var(--line)]" />
+          <div className="h-px w-3/5 origin-left animate-pulse bg-[var(--line)]" />
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="mt-12 border border-[var(--urgent)]/20 bg-white/55 px-4 py-5">
+          <p className="font-display text-xl font-semibold text-[var(--ink)]">Could not load inbox</p>
+          <p className="mt-2 text-sm text-[var(--urgent)]">{error}</p>
+        </div>
+      )}
+
+      {status === 'ready' && visible.length === 0 && (
+        <div className="mt-14 text-center">
+          <p className="font-display text-3xl font-semibold text-[var(--ink)]">
+            {rows.length === 0 ? 'Quiet on the line' : 'Nothing in this view'}
+          </p>
+          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[var(--quiet)]">
+            {rows.length === 0
+              ? 'Call the line. Logged cases appear here with a priority, a property, and the next action.'
+              : 'Try All to see every record, or clear the filter after a new call lands.'}
+          </p>
+          {rows.length === 0 && callReady && phase === 'idle' && (
             <button
               type="button"
               onClick={onCall}
-              disabled={!callReady || phase === 'processing'}
-              className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 bg-[var(--lane)] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--lane-deep)]"
             >
               Call the line
             </button>
           )}
         </div>
-      </header>
-
-      {phase === 'processing' && (
-        <p className="mt-4 rounded-lg bg-[#f6e4dc] px-3 py-2 text-sm text-[var(--ink)]">
-          Processing the call. It should land in the inbox within half a minute.
-        </p>
-      )}
-      {callError && (
-        <p className="mt-4 rounded-lg bg-[#f6e4dc] px-3 py-2 text-sm text-[var(--accent)]">{callError}</p>
-      )}
-      {!callReady && (
-        <p className="mt-4 text-sm text-[var(--muted)]">
-          The voice line is not configured in this build.
-        </p>
-      )}
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        {FILTERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onFilter(item.id)}
-            className={
-              filter === item.id
-                ? 'rounded-full bg-[var(--ink)] px-3 py-1 text-sm text-white'
-                : 'rounded-full border border-black/10 bg-white px-3 py-1 text-sm text-[var(--ink)]'
-            }
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {status === 'loading' && <p className="mt-10 text-sm text-[var(--muted)]">Loading the inbox…</p>}
-      {status === 'error' && <p className="mt-10 text-sm text-[var(--accent)]">{error}</p>}
-
-      {status === 'ready' && visible.length === 0 && (
-        <div className="mt-10 rounded-xl border border-dashed border-black/15 bg-white/70 px-5 py-10 text-center">
-          <p className="font-medium text-[var(--ink)]">
-            {rows.length === 0 ? 'Nothing in the inbox yet.' : 'Nothing matches this filter.'}
-          </p>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            {rows.length === 0
-              ? 'Call the line. Logged cases show up here with a priority, a property, and the next action.'
-              : 'Try All to see every record.'}
-          </p>
-        </div>
       )}
 
       {status === 'ready' && visible.length > 0 && (
-        <ul className="mt-4 divide-y divide-black/10 border-y border-black/10">
+        <ul className="mt-2 divide-y divide-[var(--line)] border-b border-[var(--line)]">
           {visible.map((row) => {
             const stamp = rowWhen(row.call?.started_at ?? row.created_at)
             const marker = hoursMarker(row.call)
@@ -154,37 +208,33 @@ export default function Inbox({
                 <button
                   type="button"
                   onClick={() => onOpen(row.id)}
-                  className={`flex w-full items-start gap-3 px-1 py-3 text-left hover:bg-white/80 ${
+                  className={`group flex w-full items-start gap-3 px-1 py-4 text-left transition hover:bg-white/45 ${
                     highlight.has(row.id) ? 'row-fresh' : ''
                   }`}
                 >
                   <span
-                    className={`mt-1.5 size-2.5 shrink-0 rounded-full ${
-                      row.priority === 'urgent'
-                        ? 'bg-[var(--accent)]'
-                        : row.priority === 'today'
-                          ? 'bg-[var(--amber)]'
-                          : 'bg-[var(--grey)]'
-                    }`}
+                    className={`mt-2 size-2.5 shrink-0 rounded-[2px] ${priorityTone(row.priority)}`}
                     title={priorityLabel(row.priority)}
                   />
-                  <span className="w-16 shrink-0 text-sm text-[var(--muted)]">
-                    <span className="block font-medium text-[var(--ink)]">{stamp.time}</span>
+                  <span className="w-[4.25rem] shrink-0 text-sm text-[var(--quiet)]">
+                    <span className="block font-medium text-[var(--ink)] tabular-nums">{stamp.time}</span>
                     {stamp.when}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium tracking-wide text-[var(--ink)] uppercase">
+                    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="text-[11px] font-semibold tracking-[0.14em] text-[var(--lane)] uppercase">
                         {typeLabel(row.type)}
                       </span>
                       {row.property && (
-                        <span className="truncate text-sm text-[var(--muted)]">{row.property}</span>
+                        <span className="truncate text-sm text-[var(--quiet)]">{row.property}</span>
                       )}
                     </span>
-                    <span className="mt-1 block text-sm text-[var(--ink)]">{row.summary}</span>
+                    <span className="mt-1 block text-[15px] leading-6 text-[var(--ink)] group-hover:text-[var(--lane-deep)]">
+                      {row.summary}
+                    </span>
                   </span>
                   {marker && (
-                    <span className="shrink-0 text-sm font-medium text-[var(--accent)]">{marker}</span>
+                    <span className="shrink-0 pt-0.5 text-sm font-medium text-[var(--lane)]">{marker}</span>
                   )}
                 </button>
               </li>
