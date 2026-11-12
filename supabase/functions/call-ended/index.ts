@@ -289,11 +289,83 @@ function regexFallback(transcript: string): Structured {
   };
 }
 
-function transcriptOf(message: Record<string, unknown>): string {
-  if (typeof message.transcript === "string" && message.transcript.trim()) return message.transcript;
-  const artifact = asRecord(message.artifact);
-  if (artifact && typeof artifact.transcript === "string") return artifact.transcript;
+function messagesToTranscript(raw: unknown): string {
+  if (!Array.isArray(raw)) return "";
+  const lines: string[] = [];
+  for (const item of raw) {
+    const rec = asRecord(item);
+    if (!rec) continue;
+    const role = typeof rec.role === "string" ? rec.role.toLowerCase().trim() : "";
+    if (role === "system" || role === "tool" || role === "tool_calls" || role === "tool_call_result") continue;
+    const text = [rec.message, rec.content, rec.text, rec.transcript]
+      .find((v): v is string => typeof v === "string" && v.trim().length > 0);
+    if (!text) continue;
+    const clean = text.trim();
+    if (role === "assistant" || role === "bot" || role === "ai") {
+      lines.push(`AI: ${clean}`);
+    } else if (role === "user" || role === "caller" || role === "human" || role === "customer") {
+      lines.push(`Caller: ${clean}`);
+    } else {
+      lines.push(clean);
+    }
+  }
+  return lines.join("\n");
+}
+
+function transcriptOf(obj: Record<string, unknown>): string {
+  if (typeof obj.transcript === "string" && obj.transcript.trim()) return obj.transcript;
+  const artifact = asRecord(obj.artifact);
+  if (artifact) {
+    if (typeof artifact.transcript === "string" && artifact.transcript.trim()) return artifact.transcript;
+    const fromArtifactMsgs = messagesToTranscript(artifact.messages);
+    if (fromArtifactMsgs) return fromArtifactMsgs;
+  }
+  const fromMsgs = messagesToTranscript(obj.messages);
+  if (fromMsgs) return fromMsgs;
+  const call = asRecord(obj.call);
+  if (call) {
+    if (typeof call.transcript === "string" && call.transcript.trim()) return call.transcript;
+    const callArtifact = asRecord(call.artifact);
+    if (callArtifact) {
+      if (typeof callArtifact.transcript === "string" && callArtifact.transcript.trim()) return callArtifact.transcript;
+      const fromCallArtifactMsgs = messagesToTranscript(callArtifact.messages);
+      if (fromCallArtifactMsgs) return fromCallArtifactMsgs;
+    }
+    const fromCallMsgs = messagesToTranscript(call.messages);
+    if (fromCallMsgs) return fromCallMsgs;
+  }
   return "";
+}
+
+async function fetchVapiCall(callId: string): Promise<Record<string, unknown> | null> {
+  const apiKey = Deno.env.get("VAPI_PRIVATE_KEY")?.trim();
+  if (!apiKey || callId.startsWith("demo-")) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`https://api.vapi.ai/call/${encodeURIComponent(callId)}`, {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+    if (!res.ok) {
+      console.log(JSON.stringify({ event: "vapi_call_fetch_failed", call_id: `ph-${callId}`, status: res.status }));
+      return null;
+    }
+    const data = await res.json().catch(() => null);
+    return asRecord(data);
+  } catch (err) {
+    console.log(JSON.stringify({
+      event: "vapi_call_fetch_error",
+      call_id: `ph-${callId}`,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function hasCallerSpeech(transcript: string): boolean {
@@ -494,6 +566,7 @@ Deno.serve(async (req) => {
     }
   }
 
+  const root = asRecord(body);
   const message = messageOf(body);
   const type = typeof message?.type === "string" ? message.type : null;
   if (!message || type !== "end-of-call-report") {
@@ -507,7 +580,17 @@ Deno.serve(async (req) => {
   const hours = outOfHours(started);
   const callId = `ph-${vapiCallId}`;
   const recordId = `r-ph-${vapiCallId}`;
-  const transcript = transcriptOf(message);
+  let transcript = transcriptOf(message);
+  if (!transcript.trim() && root && root !== message) {
+    transcript = transcriptOf(root);
+  }
+  let fetchedCall: Record<string, unknown> | null = null;
+  if (!transcript.trim() && vapiCallId) {
+    fetchedCall = await fetchVapiCall(vapiCallId);
+    if (fetchedCall) {
+      transcript = transcriptOf(fetchedCall);
+    }
+  }
 
   const { error: callError } = await supabase.from("calls").upsert({
     id: callId,
@@ -564,7 +647,10 @@ Deno.serve(async (req) => {
     });
   }
 
-  const analysis = asRecord(message.analysis);
+  const analysis =
+    asRecord(message.analysis) ??
+    asRecord(root?.analysis) ??
+    asRecord(fetchedCall?.analysis);
   const vapiStructured = parseStructured(analysis?.structuredData ?? analysis?.structured_data, transcript);
   if (vapiStructured) {
     const saved = await insertRecord(supabase, callId, recordId, vapiStructured, started, {
