@@ -4,8 +4,18 @@ import type { LiveCaption } from '../types'
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'processing'
 
+export type EndedCallSnapshot = {
+  callId: string | null
+  assistantId: string | null
+  startedAt: string
+  endedAt: string
+  durationSeconds: number
+  transcript: string
+}
+
 type VapiEventName =
   | 'call-start'
+  | 'call-start-success'
   | 'call-end'
   | 'speech-start'
   | 'speech-end'
@@ -68,6 +78,13 @@ export function useLineCall() {
     speaker: 'assistant' | 'caller'
     text: string
   } | null>(null)
+  const [lastEndedCall, setLastEndedCall] = useState<EndedCallSnapshot | null>(null)
+
+  const callIdRef = useRef<string | null>(null)
+  const startedAtRef = useRef<string | null>(null)
+  const elapsedRef = useRef<number>(0)
+  const captionsRef = useRef<LiveCaption[]>([])
+  const partialRef = useRef<{ speaker: 'assistant' | 'caller'; text: string } | null>(null)
 
   const ready = Boolean(
     import.meta.env.VITE_VAPI_PUBLIC_KEY && import.meta.env.VITE_VAPI_ASSISTANT_ID,
@@ -82,7 +99,11 @@ export function useLineCall() {
   useEffect(() => {
     if (phase !== 'live') return
     const timer = window.setInterval(() => {
-      setElapsedSeconds((s) => s + 1)
+      setElapsedSeconds((s) => {
+        const next = s + 1
+        elapsedRef.current = next
+        return next
+      })
     }, 1000)
     return () => window.clearInterval(timer)
   }, [phase])
@@ -100,6 +121,11 @@ export function useLineCall() {
     const vapi = new (resolveCtor(VapiNs))(key)
 
     vapi.on('call-start', () => {
+      startedAtRef.current = new Date().toISOString()
+      elapsedRef.current = 0
+      captionsRef.current = []
+      partialRef.current = null
+      setLastEndedCall(null)
       setPhase('live')
       setError(null)
       setMuted(false)
@@ -111,12 +137,50 @@ export function useLineCall() {
       setPartialCaption(null)
     })
 
+    vapi.on('call-start-success', (ev: unknown) => {
+      if (ev && typeof ev === 'object' && 'callId' in ev) {
+        const id = (ev as { callId?: unknown }).callId
+        if (typeof id === 'string' && id.trim()) {
+          callIdRef.current = id.trim()
+        }
+      }
+    })
+
     vapi.on('call-end', () => {
       setPhase('processing')
       setAssistantSpeaking(false)
       setVolumeLevel(0)
       setLocalVolumeLevel(0)
       setPartialCaption(null)
+
+      const turns = [...captionsRef.current]
+      const dangling = partialRef.current
+      if (dangling && dangling.text.trim()) {
+        const last = turns[turns.length - 1]
+        if (!last || last.speaker !== dangling.speaker || last.text !== dangling.text) {
+          turns.push({
+            id: `${Date.now()}-partial`,
+            speaker: dangling.speaker,
+            text: dangling.text.trim(),
+            timestamp: new Date().toISOString(),
+          })
+        }
+      }
+      partialRef.current = null
+      const transcript = turns
+        .map((turn) => `${turn.speaker === 'assistant' ? 'AI' : 'Caller'}: ${turn.text}`)
+        .join('\n')
+
+      if (callIdRef.current || transcript.trim()) {
+        setLastEndedCall({
+          callId: callIdRef.current,
+          assistantId: import.meta.env.VITE_VAPI_ASSISTANT_ID ?? null,
+          startedAt: startedAtRef.current ?? new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          durationSeconds: elapsedRef.current,
+          transcript,
+        })
+      }
     })
 
     vapi.on('speech-start', () => {
@@ -142,19 +206,28 @@ export function useLineCall() {
     vapi.on('message', (raw: unknown) => {
       if (!raw || typeof raw !== 'object') return
       const msg = raw as Record<string, unknown>
+      if (msg.call && typeof msg.call === 'object') {
+        const msgCallId = (msg.call as { id?: unknown }).id
+        if (typeof msgCallId === 'string' && msgCallId.trim()) {
+          callIdRef.current = msgCallId.trim()
+        }
+      }
       if (msg.type === 'transcript') {
         const text = typeof msg.transcript === 'string' ? msg.transcript.trim() : ''
         if (!text) return
         const speaker: 'assistant' | 'caller' = msg.role === 'user' ? 'caller' : 'assistant'
         const transcriptType = msg.transcriptType === 'final' ? 'final' : 'partial'
         if (transcriptType === 'partial') {
-          setPartialCaption({ speaker, text })
+          const nextPartial = { speaker, text }
+          partialRef.current = nextPartial
+          setPartialCaption(nextPartial)
         } else {
+          partialRef.current = null
           setPartialCaption(null)
           setCaptions((prev) => {
             const last = prev[prev.length - 1]
             if (last && last.speaker === speaker && last.text === text) return prev
-            return [
+            const updated = [
               ...prev,
               {
                 id: `${Date.now()}-${prev.length}`,
@@ -163,6 +236,8 @@ export function useLineCall() {
                 timestamp: new Date().toISOString(),
               },
             ]
+            captionsRef.current = updated
+            return updated
           })
         }
       } else if (msg.type === 'speech-update') {
@@ -188,13 +263,25 @@ export function useLineCall() {
       setError('The voice line is not configured in this build.')
       return
     }
+    callIdRef.current = null
+    startedAtRef.current = new Date().toISOString()
+    elapsedRef.current = 0
+    captionsRef.current = []
+    partialRef.current = null
+    setLastEndedCall(null)
     setError(null)
     setElapsedSeconds(0)
     setCaptions([])
     setPartialCaption(null)
     setPhase('connecting')
     try {
-      await client().start(assistantId)
+      const started = await client().start(assistantId)
+      if (started && typeof started === 'object' && 'id' in started) {
+        const id = (started as { id?: unknown }).id
+        if (typeof id === 'string' && id.trim()) {
+          callIdRef.current = id.trim()
+        }
+      }
     } catch (err) {
       setPhase('idle')
       setError(errorText(err))
@@ -222,6 +309,10 @@ export function useLineCall() {
     setPhase((current) => (current === 'processing' ? 'idle' : current))
   }, [])
 
+  const clearLastEndedCall = useCallback(() => {
+    setLastEndedCall(null)
+  }, [])
+
   return {
     phase,
     error,
@@ -233,6 +324,8 @@ export function useLineCall() {
     assistantSpeaking,
     captions,
     partialCaption,
+    lastEndedCall,
+    clearLastEndedCall,
     start,
     hangUp,
     toggleMute,

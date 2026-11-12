@@ -6,7 +6,7 @@ import RecordWorkbench from './components/RecordWorkbench'
 import ShortcutsModal from './components/ShortcutsModal'
 import TelemetryStrip from './components/TelemetryStrip'
 import { matchesFilter, matchesSearch, primaryAction, priorityRank } from './lib/format'
-import { triggerDemoCall } from './lib/demoCall'
+import { syncLiveCallFallback, triggerDemoCall } from './lib/demoCall'
 import { useInbox } from './lib/inbox'
 import { useLineCall } from './lib/lineCall'
 import type { DemoScriptId, InboxFilter, Priority, SortMode, ToastItem } from './types'
@@ -23,6 +23,8 @@ export default function App() {
     assistantSpeaking,
     captions,
     partialCaption,
+    lastEndedCall,
+    clearLastEndedCall,
     start: startCall,
     hangUp: hangUpCall,
     toggleMute,
@@ -97,6 +99,7 @@ export default function App() {
     const timer = window.setTimeout(() => {
       setSelectedId(latestArrivedPhoneId)
       setMobileView('record')
+      clearLastEndedCall()
       if (phase === 'processing') {
         finishProcessing()
       }
@@ -104,7 +107,42 @@ export default function App() {
       clearLatestArrivedPhoneId()
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [latestArrivedPhoneId, phase, finishProcessing, clearLatestArrivedPhoneId, notify])
+  }, [
+    latestArrivedPhoneId,
+    phase,
+    finishProcessing,
+    clearLatestArrivedPhoneId,
+    clearLastEndedCall,
+    notify,
+  ])
+
+  // Client fallback: if Vapi Server URL didn't deliver end-of-call-report within 3.5s,
+  // triage the captured browser transcript + Vapi call ID via demo-call live_fallback mode.
+  useEffect(() => {
+    if (!lastEndedCall) return
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await syncLiveCallFallback(lastEndedCall)
+        if (cancelled) return
+        await reload()
+        if (cancelled) return
+        if (res.record_id) {
+          setSelectedId(res.record_id)
+          setMobileView('record')
+        }
+        finishProcessing()
+      } catch {
+        // Keep processing/realtime polling until timeout if fallback fails
+      } finally {
+        if (!cancelled) clearLastEndedCall()
+      }
+    }, 3500)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [lastEndedCall, reload, finishProcessing, clearLastEndedCall])
 
   const activeRow = useMemo(
     () => rows.find((row) => row.id === effectiveSelectedId) ?? null,

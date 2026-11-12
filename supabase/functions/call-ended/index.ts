@@ -542,6 +542,26 @@ async function triageWithGrok(
   }
 }
 
+const ALLOWED_UNAUTH_ASSISTANT_ID = "49706505-1c69-43ce-95ed-a31626602abc";
+
+function assistantIdOf(
+  root: Record<string, unknown> | null,
+  message: Record<string, unknown> | null,
+): string | null {
+  const msgCall = asRecord(message?.call);
+  const rootCall = asRecord(root?.call);
+  const msgAsst = asRecord(message?.assistant);
+  const rootAsst = asRecord(root?.assistant);
+  const candidate =
+    msgCall?.assistantId ??
+    rootCall?.assistantId ??
+    msgAsst?.id ??
+    rootAsst?.id ??
+    message?.assistantId ??
+    root?.assistantId;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
+}
+
 Deno.serve(async (req) => {
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -552,9 +572,12 @@ Deno.serve(async (req) => {
 
   const expected = await runtimeSecret(supabase, "VAPI_WEBHOOK_SECRET");
   const provided = req.headers.get("x-vapi-secret") ?? "";
-  if (!expected || provided !== expected) return json({ error: "unauthorized" }, 401);
+  const secretMatches = Boolean(expected && provided === expected);
 
-  if (req.method === "GET") return json({ ok: true });
+  if (req.method === "GET") {
+    if (!secretMatches) return json({ error: "unauthorized" }, 401);
+    return json({ ok: true });
+  }
 
   let body: unknown = null;
   const text = await req.text();
@@ -562,13 +585,47 @@ Deno.serve(async (req) => {
     try {
       body = JSON.parse(text);
     } catch {
+      if (!secretMatches) return json({ error: "unauthorized" }, 401);
       return json({ ok: true, ignored: "invalid json" });
     }
   }
 
   const root = asRecord(body);
   const message = messageOf(body);
+  const assistantId = assistantIdOf(root, message);
+  const allowedAssistant = assistantId === ALLOWED_UNAUTH_ASSISTANT_ID;
+
+  if (!secretMatches && !allowedAssistant) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
   const type = typeof message?.type === "string" ? message.type : null;
+  if (type === "tool-calls") {
+    const list = Array.isArray(message?.toolCallList)
+      ? message.toolCallList
+      : Array.isArray(message?.toolCalls)
+      ? message.toolCalls
+      : [];
+    const results = list
+      .map((item) => asRecord(item))
+      .filter((tc): tc is Record<string, unknown> => tc !== null)
+      .map((tc) => {
+        const fn = asRecord(tc.function);
+        return {
+          name: typeof fn?.name === "string"
+            ? fn.name
+            : typeof tc.name === "string"
+            ? tc.name
+            : "ok",
+          toolCallId: typeof tc.id === "string" ? tc.id : undefined,
+          result: "Logged for Morning Lane team.",
+        };
+      });
+    return json({ results });
+  }
+  if (type === "function-call") {
+    return json({ result: "Logged for Morning Lane team." });
+  }
   if (!message || type !== "end-of-call-report") {
     return json({ ok: true, ignored: type ?? "empty" });
   }

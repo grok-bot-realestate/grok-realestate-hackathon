@@ -94,11 +94,6 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "Invalid JSON body" }, 400);
   }
 
-  const rawId = typeof body.script_id === "string" ? body.script_id.trim() : "boiler";
-  const scriptId: DemoScriptId =
-    rawId === "viewing" || rawId === "arrears" ? rawId : "boiler";
-  const scenario = DEMO_SCENARIOS[scriptId];
-
   const supabase = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -108,29 +103,89 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "Webhook secret not configured" }, 500);
   }
 
-  const uniqueSuffix = crypto.randomUUID().slice(0, 8);
-  const demoCallId = `demo-${scriptId}-${uniqueSuffix}`;
-  const endedAt = new Date();
-  const startedAt = new Date(endedAt.getTime() - scenario.durationSeconds * 1000);
+  const mode = typeof body.mode === "string" ? body.mode.trim() : "demo";
+
+  let targetCallId: string;
+  let startedAt: Date;
+  let endedAt: Date;
+  let durationSeconds: number;
+  let transcript: string;
+  let assistantId: string | undefined;
+  let isSimulated = true;
+  let scriptId: DemoScriptId = "boiler";
+
+  if (mode === "live_fallback") {
+    const rawCallId = typeof body.call_id === "string" ? body.call_id.trim() : "";
+    const rawTranscript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+    if (!rawCallId && !rawTranscript) {
+      return json({ ok: false, error: "Missing call_id and transcript" }, 400);
+    }
+
+    targetCallId = rawCallId || `live-${crypto.randomUUID().slice(0, 8)}`;
+    const dbCallId = `ph-${targetCallId}`;
+    const dbRecordId = `r-ph-${targetCallId}`;
+
+    // Skip if Vapi's own end-of-call-report webhook already persisted this call
+    const { data: existingRec } = await supabase
+      .from("records")
+      .select("id, call_id, triage_source")
+      .eq("id", dbRecordId)
+      .maybeSingle();
+    if (existingRec) {
+      return json({
+        ok: true,
+        already_exists: true,
+        call_id: dbCallId,
+        record_id: dbRecordId,
+        triage_source: existingRec.triage_source ?? "grok",
+      });
+    }
+
+    endedAt = typeof body.ended_at === "string" && !Number.isNaN(Date.parse(body.ended_at))
+      ? new Date(body.ended_at)
+      : new Date();
+    durationSeconds = typeof body.duration_seconds === "number" && Number.isFinite(body.duration_seconds)
+      ? Math.max(0, Math.round(body.duration_seconds))
+      : 0;
+    startedAt = typeof body.started_at === "string" && !Number.isNaN(Date.parse(body.started_at))
+      ? new Date(body.started_at)
+      : new Date(endedAt.getTime() - durationSeconds * 1000);
+    transcript = rawTranscript;
+    assistantId = typeof body.assistant_id === "string" && body.assistant_id.trim()
+      ? body.assistant_id.trim()
+      : undefined;
+    isSimulated = false;
+  } else {
+    const rawId = typeof body.script_id === "string" ? body.script_id.trim() : "boiler";
+    scriptId = rawId === "viewing" || rawId === "arrears" ? rawId : "boiler";
+    const scenario = DEMO_SCENARIOS[scriptId];
+
+    const uniqueSuffix = crypto.randomUUID().slice(0, 8);
+    targetCallId = `demo-${scriptId}-${uniqueSuffix}`;
+    endedAt = new Date();
+    startedAt = new Date(endedAt.getTime() - scenario.durationSeconds * 1000);
+    durationSeconds = scenario.durationSeconds;
+    transcript = scenario.transcript;
+  }
 
   const vapiPayload = {
     message: {
       type: "end-of-call-report",
       call: {
-        id: demoCallId,
+        id: targetCallId,
+        ...(assistantId ? { assistantId } : {}),
         startedAt: startedAt.toISOString(),
         endedAt: endedAt.toISOString(),
       },
       startedAt: startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
-      durationSeconds: scenario.durationSeconds,
-      transcript: scenario.transcript,
+      durationSeconds,
+      transcript,
       artifact: {
-        transcript: scenario.transcript,
+        transcript,
       },
       endedReason: "customer-ended-call",
-      simulated: true,
-      script_id: scriptId,
+      ...(isSimulated ? { simulated: true, script_id: scriptId } : { client_fallback: true }),
     },
   };
 
@@ -163,8 +218,8 @@ Deno.serve(async (req) => {
 
     console.log(
       JSON.stringify({
-        event: "demo_call_triaged",
-        script_id: scriptId,
+        event: isSimulated ? "demo_call_triaged" : "live_call_fallback_triaged",
+        script_id: isSimulated ? scriptId : null,
         call_id: result.call_id ?? null,
         record_id: result.record_id ?? null,
         triage_source: result.triage_source ?? null,
@@ -173,7 +228,8 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
-      script_id: scriptId,
+      mode,
+      ...(isSimulated ? { script_id: scriptId } : {}),
       call_id: result.call_id,
       record_id: result.record_id,
       triage_source: result.triage_source ?? "grok",
