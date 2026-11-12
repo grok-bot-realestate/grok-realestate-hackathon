@@ -9,6 +9,11 @@ type CaseType = (typeof TYPES)[number];
 type Priority = (typeof PRIORITIES)[number];
 type Safety = (typeof SAFETY)[number];
 
+type EvidenceQuote = {
+  field: string;
+  quote: string;
+};
+
 type Structured = {
   type: CaseType;
   priority: Priority;
@@ -18,11 +23,39 @@ type Structured = {
   safety_check: Safety;
   summary: string;
   action: string;
+  caller_initials: string | null;
+  grok_reasoning: string | null;
+  evidence_quotes: EvidenceQuote[];
+  draft_reply: string | null;
 };
 
-const TRIAGE_SYSTEM = `You are a lettings property manager's assistant. Read the call transcript or case and return JSON only, no prose, matching this schema:
-{type: "maintenance"|"viewing"|"let"|"arrears"|"general", priority: "urgent"|"today"|"week", property: string|null, issue: string, callback_confirmed: boolean, safety_check: "asked, clear"|"asked, concern"|"not asked"|"n/a", summary: string (one line, under 100 chars), action: string (one imperative sentence a property manager would do next), due: ISO timestamp}
-Priority rules: no heat, no hot water, no power, no water, lock or door security, active leak, gas smell, arrears = urgent. Viewings and landlord enquiries = today. Everything else = week. Due: urgent = next working day 10:00; today = end of next working day; week = 5 working days. Never invent facts not in the transcript. If the caller hung up before giving anything, type general, priority week, summary "Hung up at greeting", action "No action".`;
+const TRIAGE_SYSTEM = `You are the triage AI for Morning Lane, a UK lettings branch. Read the call transcript and return JSON only (no prose) matching this exact schema:
+{
+  "type": "maintenance" | "viewing" | "let" | "arrears" | "general",
+  "priority": "urgent" | "today" | "week",
+  "property": string | null,
+  "issue": string,
+  "callback_confirmed": boolean,
+  "safety_check": "asked, clear" | "asked, concern" | "not asked" | "n/a",
+  "caller_initials": string | null,
+  "summary": string,
+  "action": string,
+  "grok_reasoning": string,
+  "evidence_quotes": [{"field": "priority" | "property" | "issue" | "safety_check" | "callback_confirmed", "quote": string}],
+  "draft_reply": string
+}
+
+Rules:
+- Priority "urgent": no heat/heating, no hot water, no power, no water, lock or external door that won't secure, active leak/flood, gas smell, safety concern, or rent arrears/dispute.
+- Priority "today": viewing requests, landlord/valuation enquiries, sole blocked toilet, broken oven/essential appliance.
+- Priority "week": routine maintenance (garden, window handle, minor fixtures), check-out/inspection follow-ups, general enquiries.
+- "summary": concise one-line summary under 100 chars.
+- "action": one specific imperative next step a UK lettings property manager should take next.
+- "grok_reasoning": 1-2 short sentences explaining why this priority, type, and action were chosen.
+- "evidence_quotes": 1-4 EXACT verbatim substrings copied word-for-word from the transcript proving the extracted priority, property, issue, or safety check. Never alter or invent quote wording.
+- "draft_reply": a crisp, ready-to-send callback SMS / contractor instruction grounded strictly in the transcript. Use caller initials only (never include full names or phone numbers).
+- "caller_initials": if the caller gave their name, return initials only (e.g. "J. S."), never a full name or phone number; otherwise null.
+- Never invent facts not in the transcript.`;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -154,7 +187,40 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? value as T : null;
 }
 
-function parseStructured(input: unknown): Structured | null {
+function sanitizeInitials(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || /^(null|none|n\/a|unknown)$/i.test(trimmed)) return null;
+  const parts = trimmed.split(/[\s.]+/).filter(Boolean).slice(0, 3);
+  if (parts.length === 0) return null;
+  return parts.map((p) => `${p[0].toUpperCase()}.`).join(" ").slice(0, 12);
+}
+
+function normalizeWs(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function sanitizeQuotes(raw: unknown, transcript: string): EvidenceQuote[] {
+  if (!Array.isArray(raw)) return [];
+  const normTranscript = normalizeWs(transcript);
+  const out: EvidenceQuote[] = [];
+  for (const item of raw) {
+    const rec = asRecord(item);
+    if (!rec) continue;
+    const field = typeof rec.field === "string" ? rec.field.trim() : "";
+    const quote = typeof rec.quote === "string" ? rec.quote.trim() : "";
+    if (!field || !quote || quote.length < 4) continue;
+    // Verify verbatim grounding against transcript
+    const normQuote = normalizeWs(quote);
+    if (normTranscript.includes(normQuote)) {
+      out.push({ field, quote: quote.slice(0, 220) });
+    }
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+function parseStructured(input: unknown, transcript: string): Structured | null {
   const o = asRecord(input);
   if (!o) return null;
   const type = oneOf(o.type, TYPES);
@@ -166,6 +232,12 @@ function parseStructured(input: unknown): Structured | null {
   const issue = typeof o.issue === "string" ? o.issue.trim() : "";
   const property = typeof o.property === "string" && o.property.trim() ? o.property.trim() : null;
   const callback = o.callback_confirmed === true || o.callback_confirmed === "true";
+  const grok_reasoning = typeof o.grok_reasoning === "string" && o.grok_reasoning.trim()
+    ? o.grok_reasoning.trim().slice(0, 400)
+    : null;
+  const draft_reply = typeof o.draft_reply === "string" && o.draft_reply.trim()
+    ? o.draft_reply.trim().slice(0, 600)
+    : null;
   return {
     type,
     priority,
@@ -175,6 +247,45 @@ function parseStructured(input: unknown): Structured | null {
     safety_check: safety,
     summary: o.summary.trim().slice(0, 100),
     action: o.action.trim(),
+    caller_initials: sanitizeInitials(o.caller_initials),
+    grok_reasoning,
+    evidence_quotes: sanitizeQuotes(o.evidence_quotes, transcript),
+    draft_reply,
+  };
+}
+
+function regexFallback(transcript: string): Structured {
+  const lower = transcript.toLowerCase();
+  const urgent = /(no heat|no hot water|no power|no water|active leak|water leaking|burst pipe|gas smell|smell of gas|lock.*broken|won't lock|arrears)/i.test(lower);
+  const viewing = /\b(viewing|view the flat|view the property)\b/i.test(lower);
+  const valuation = /\b(valuation|landlord|let my property)\b/i.test(lower);
+  const arrears = /\b(arrears|rent payment|missed rent)\b/i.test(lower);
+  const maintenance = /(boiler|leak|pipe|tap|toilet|shower|heating|radiator|lock|door|window|oven|dishwasher|washing machine|damp|mould)/i.test(lower);
+
+  const type: CaseType = arrears ? "arrears" : viewing ? "viewing" : valuation ? "let" : maintenance ? "maintenance" : "general";
+  const priority: Priority = urgent || arrears ? "urgent" : viewing || valuation ? "today" : "week";
+  const safety: Safety = type === "maintenance"
+    ? (/gas|electrics|risk/i.test(lower) ? (/no gas|no smell|clear|safe/i.test(lower) ? "asked, clear" : "asked, concern") : "not asked")
+    : "n/a";
+
+  const callerLine = transcript.split(/\n+/).find((l) => /^(Caller|User|Human|Customer):/i.test(l)) ?? transcript;
+  const cleanLine = callerLine.replace(/^(Caller|User|Human|Customer):\s*/i, "").trim();
+
+  return {
+    type,
+    priority,
+    property: null,
+    issue: cleanLine.slice(0, 140) || "Caller enquiry",
+    callback_confirmed: /confirm|call.*back|number/i.test(lower),
+    safety_check: safety,
+    summary: (cleanLine || "After-hours call logged").slice(0, 100),
+    action: priority === "urgent"
+      ? "Review urgent transcript immediately and dispatch emergency contractor."
+      : "Call the caller back on the next working day and log next steps.",
+    caller_initials: null,
+    grok_reasoning: "Deterministic fallback rules applied because LLM triage was unavailable.",
+    evidence_quotes: cleanLine ? [{ field: "issue", quote: cleanLine.slice(0, 200) }] : [],
+    draft_reply: null,
   };
 }
 
@@ -183,6 +294,17 @@ function transcriptOf(message: Record<string, unknown>): string {
   const artifact = asRecord(message.artifact);
   if (artifact && typeof artifact.transcript === "string") return artifact.transcript;
   return "";
+}
+
+function hasCallerSpeech(transcript: string): boolean {
+  const lines = transcript.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return false;
+  const callerLines = lines.filter((l) => /^(Caller|User|Human|Customer):/i.test(l));
+  if (callerLines.length > 0) {
+    return callerLines.some((l) => l.replace(/^(Caller|User|Human|Customer):\s*/i, "").trim().length > 0);
+  }
+  const nonAi = lines.filter((l) => !/^(AI|Assistant|Bot):/i.test(l));
+  return nonAi.length > 0;
 }
 
 function callIdOf(message: Record<string, unknown>): string | null {
@@ -215,7 +337,15 @@ async function insertRecord(
   recordId: string,
   structured: Structured,
   started: Date,
+  meta: { triage_source: string; grok_model: string | null; grok_latency_ms: number | null },
 ): Promise<{ ok: boolean; created: boolean }> {
+  if (structured.caller_initials) {
+    await supabase
+      .from("calls")
+      .update({ caller_initials: structured.caller_initials })
+      .eq("id", callId);
+  }
+
   const { data: existing, error: readError } = await supabase
     .from("records")
     .select("id")
@@ -237,10 +367,16 @@ async function insertRecord(
     callback_confirmed: structured.callback_confirmed,
     safety_check: structured.safety_check,
     summary: structured.summary,
+    triage_source: meta.triage_source,
+    grok_model: meta.grok_model,
+    grok_latency_ms: meta.grok_latency_ms,
+    grok_reasoning: structured.grok_reasoning,
+    evidence_quotes: structured.evidence_quotes,
+    draft_reply: structured.draft_reply,
   });
   if (recordError) {
     if (recordError.code === "23505") return { ok: true, created: false };
-    console.log(JSON.stringify({ event: "record_insert_failed", call_id: callId, code: recordError.code }));
+    console.log(JSON.stringify({ event: "record_insert_failed", call_id: callId, code: recordError.code, msg: recordError.message }));
     return { ok: false, created: false };
   }
 
@@ -266,72 +402,72 @@ async function runtimeSecret(
   return Deno.env.get(name) ?? "";
 }
 
-async function triageInline(
+async function triageWithGrok(
   supabase: ReturnType<typeof createClient>,
   callId: string,
   transcript: string,
-): Promise<Structured | null> {
-  const key = await runtimeSecret(supabase, "LLM_API_KEY") || await runtimeSecret(supabase, "XAI_API_KEY");
+): Promise<{ structured: Structured; model: string; latencyMs: number } | null> {
+  const key = await runtimeSecret(supabase, "XAI_API_KEY") || await runtimeSecret(supabase, "LLM_API_KEY");
   if (!key) {
     console.log(JSON.stringify({ event: "llm_skipped", call_id: callId, reason: "no_key" }));
     return null;
   }
   const base = ((await runtimeSecret(supabase, "LLM_BASE_URL")) || "https://api.x.ai/v1").replace(/\/$/, "");
-  const model = (await runtimeSecret(supabase, "LLM_MODEL")) || "grok-4-fast";
+  const model = (await runtimeSecret(supabase, "LLM_MODEL")) || "grok-4.20-0309-non-reasoning";
   const started = Date.now();
-  const res = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: TRIAGE_SYSTEM },
-        { role: "user", content: transcript || "(empty transcript)" },
-      ],
-    }),
-  });
-  const latency = Date.now() - started;
-  const payload = await res.json().catch(() => null);
-  const usage = asRecord(asRecord(payload)?.usage);
-  console.log(JSON.stringify({
-    event: "llm",
-    call_id: callId,
-    status: res.status,
-    latency_ms: latency,
-    tokens: usage?.total_tokens ?? null,
-  }));
-  if (!res.ok) return null;
-  const choices = asRecord(payload)?.choices;
-  const first = Array.isArray(choices) ? asRecord(choices[0]) : null;
-  const message = asRecord(first?.message);
-  const content = message?.content;
-  if (typeof content !== "string") return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    return parseStructured(JSON.parse(content));
-  } catch {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: TRIAGE_SYSTEM },
+          { role: "user", content: transcript },
+        ],
+      }),
+    });
+    const latency = Date.now() - started;
+    const payload = await res.json().catch(() => null);
+    const usage = asRecord(asRecord(payload)?.usage);
+    const resolvedModel = typeof asRecord(payload)?.model === "string" ? String(asRecord(payload)?.model) : model;
+    console.log(JSON.stringify({
+      event: "llm",
+      provider: "xai",
+      call_id: callId,
+      model: resolvedModel,
+      status: res.status,
+      latency_ms: latency,
+      tokens: usage?.total_tokens ?? null,
+    }));
+    if (!res.ok) return null;
+    const choices = asRecord(payload)?.choices;
+    const first = Array.isArray(choices) ? asRecord(choices[0]) : null;
+    const message = asRecord(first?.message);
+    const content = message?.content;
+    if (typeof content !== "string") return null;
+    const parsed = parseStructured(JSON.parse(content), transcript);
+    if (!parsed) return null;
+    return { structured: parsed, model: resolvedModel, latencyMs: latency };
+  } catch (err) {
+    console.log(JSON.stringify({
+      event: "llm_error",
+      call_id: callId,
+      model,
+      error: err instanceof Error ? err.message : String(err),
+    }));
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
-}
-
-async function triageFunction(callId: string): Promise<"ok" | "missing" | "failed"> {
-  const base = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!base || !key) return "missing";
-  const res = await fetch(`${base}/functions/v1/triage`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ call_id: callId }),
-  });
-  if (res.status === 404) return "missing";
-  return res.ok ? "ok" : "failed";
 }
 
 Deno.serve(async (req) => {
@@ -390,15 +526,7 @@ Deno.serve(async (req) => {
     return json({ error: "insert failed" }, 500);
   }
 
-  const analysis = asRecord(message.analysis);
-  const structured = parseStructured(analysis?.structuredData ?? analysis?.structured_data);
-  if (structured) {
-    const saved = await insertRecord(supabase, callId, recordId, structured, started);
-    if (!saved.ok) return json({ error: "insert failed" }, 500);
-    return json({ ok: true, call_id: callId, record_id: recordId, source: "structured" });
-  }
-
-  if (!transcript.trim()) {
+  if (!transcript.trim() || !hasCallerSpeech(transcript)) {
     const saved = await insertRecord(supabase, callId, recordId, {
       type: "general",
       priority: "week",
@@ -408,22 +536,52 @@ Deno.serve(async (req) => {
       safety_check: "n/a",
       summary: "Hung up at greeting",
       action: "No action",
-    }, started);
+      caller_initials: null,
+      grok_reasoning: "Caller disconnected before speaking after the AI greeting.",
+      evidence_quotes: [],
+      draft_reply: null,
+    }, started, { triage_source: "empty", grok_model: null, grok_latency_ms: null });
     if (!saved.ok) return json({ error: "insert failed" }, 500);
-    return json({ ok: true, call_id: callId, record_id: recordId, source: "empty" });
+    return json({ ok: true, call_id: callId, record_id: recordId, triage_source: "empty" });
   }
 
-  const delegated = await triageFunction(callId);
-  if (delegated === "ok") {
-    return json({ ok: true, call_id: callId, source: "triage" });
+  const grok = await triageWithGrok(supabase, callId, transcript);
+  if (grok) {
+    const saved = await insertRecord(supabase, callId, recordId, grok.structured, started, {
+      triage_source: "grok",
+      grok_model: grok.model,
+      grok_latency_ms: grok.latencyMs,
+    });
+    if (!saved.ok) return json({ error: "insert failed" }, 500);
+    return json({
+      ok: true,
+      call_id: callId,
+      record_id: recordId,
+      triage_source: "grok",
+      grok_model: grok.model,
+      grok_latency_ms: grok.latencyMs,
+      evidence_count: grok.structured.evidence_quotes.length,
+    });
   }
 
-  const inferred = await triageInline(supabase, callId, transcript);
-  if (!inferred) {
-    console.log(JSON.stringify({ event: "triage_failed", call_id: callId, delegated }));
-    return json({ ok: true, call_id: callId, record: false });
+  const analysis = asRecord(message.analysis);
+  const vapiStructured = parseStructured(analysis?.structuredData ?? analysis?.structured_data, transcript);
+  if (vapiStructured) {
+    const saved = await insertRecord(supabase, callId, recordId, vapiStructured, started, {
+      triage_source: "fallback",
+      grok_model: null,
+      grok_latency_ms: null,
+    });
+    if (!saved.ok) return json({ error: "insert failed" }, 500);
+    return json({ ok: true, call_id: callId, record_id: recordId, triage_source: "fallback" });
   }
-  const saved = await insertRecord(supabase, callId, recordId, inferred, started);
+
+  const fallback = regexFallback(transcript);
+  const saved = await insertRecord(supabase, callId, recordId, fallback, started, {
+    triage_source: "fallback",
+    grok_model: null,
+    grok_latency_ms: null,
+  });
   if (!saved.ok) return json({ error: "insert failed" }, 500);
-  return json({ ok: true, call_id: callId, record_id: recordId, source: "llm" });
+  return json({ ok: true, call_id: callId, record_id: recordId, triage_source: "fallback" });
 });

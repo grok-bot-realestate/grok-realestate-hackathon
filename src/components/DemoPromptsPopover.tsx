@@ -87,7 +87,7 @@ export default function DemoPromptsPopover({
             Live Voice Test · Caller Scripts
           </p>
           <p className="mt-0.5 text-xs text-[var(--quiet)]">
-            Say any of these aloud after clicking Call the line — Morning Lane handles safety checks and digit readback.
+            Say any of these aloud after clicking Call the line — Morning Lane handles safety checks, digit readback, and Grok evidence triage in ~10s.
           </p>
         </div>
         <div className="flex items-center gap-2">

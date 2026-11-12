@@ -14,10 +14,29 @@ type RawRecord = {
   safety_check: string | null
   summary: string
   created_at: string
+  triage_source?: string | null
+  grok_model?: string | null
+  grok_latency_ms?: number | null
+  grok_reasoning?: string | null
+  evidence_quotes?: unknown
+  draft_reply?: string | null
 }
 
 function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : []
+}
+
+function sanitizeEvidenceQuotes(raw: unknown): InboxRecord['evidence_quotes'] {
+  if (!Array.isArray(raw)) return []
+  const out: InboxRecord['evidence_quotes'] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const rec = item as Record<string, unknown>
+    const field = typeof rec.field === 'string' && rec.field.trim() ? rec.field.trim() : 'evidence'
+    const quote = typeof rec.quote === 'string' ? rec.quote.trim() : ''
+    if (quote) out.push({ field, quote })
+  }
+  return out
 }
 
 function computeKpiFromRows(rows: InboxRecord[], serverKpi: Kpi | null): Kpi {
@@ -61,7 +80,7 @@ export function useInbox(poll: boolean) {
       supabase
         .from('records')
         .select(
-          'id, call_id, type, priority, property, issue, callback_confirmed, safety_check, summary, created_at',
+          'id, call_id, type, priority, property, issue, callback_confirmed, safety_check, summary, created_at, triage_source, grok_model, grok_latency_ms, grok_reasoning, evidence_quotes, draft_reply',
         )
         .order('created_at', { ascending: false }),
       supabase
@@ -99,8 +118,22 @@ export function useInbox(poll: boolean) {
 
     const next = asArray(recordsRes.data as RawRecord[] | null)
       .map((record): InboxRecord => ({
-        ...record,
+        id: record.id,
+        call_id: record.call_id,
+        type: record.type,
+        priority: record.priority,
+        property: record.property,
+        issue: record.issue,
         callback_confirmed: Boolean(record.callback_confirmed),
+        safety_check: record.safety_check,
+        summary: record.summary,
+        created_at: record.created_at,
+        triage_source: record.triage_source ?? null,
+        grok_model: record.grok_model ?? null,
+        grok_latency_ms: typeof record.grok_latency_ms === 'number' ? record.grok_latency_ms : null,
+        grok_reasoning: record.grok_reasoning ?? null,
+        evidence_quotes: sanitizeEvidenceQuotes(record.evidence_quotes),
+        draft_reply: record.draft_reply ?? null,
         call: record.call_id ? (calls.get(record.call_id) ?? null) : null,
         actions: actionsByRecord.get(record.id) ?? [],
       }))
@@ -292,6 +325,12 @@ export function useInbox(poll: boolean) {
     [rows, load],
   )
 
+  const setLocalDraftReply = useCallback((recordId: string, draftReply: string) => {
+    setRows((prev) =>
+      prev.map((row) => (row.id === recordId ? { ...row, draft_reply: draftReply } : row)),
+    )
+  }, [])
+
   const kpi = computeKpiFromRows(rows, serverKpi)
 
   return {
@@ -309,5 +348,6 @@ export function useInbox(poll: boolean) {
     toggleActionDone,
     addFollowUpAction,
     updateRecordPriority,
+    setLocalDraftReply,
   }
 }

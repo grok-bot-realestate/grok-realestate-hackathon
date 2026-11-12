@@ -233,6 +233,50 @@ export function defaultDueForPriority(priority: Priority): string {
   return next.toISOString()
 }
 
+export function evidenceFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    priority: 'Priority',
+    property: 'Property',
+    issue: 'Issue',
+    safety_check: 'Safety check',
+    callback_confirmed: 'Callback',
+    action: 'Action',
+    evidence: 'Evidence',
+  }
+  return labels[field] ?? field.replace(/_/g, ' ')
+}
+
+export function normalizeWhitespace(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+export function findMatchingTurnIndex(turns: TranscriptTurn[], quote: string): number {
+  const normQuote = normalizeWhitespace(quote)
+  if (!normQuote) return -1
+  const exactIdx = turns.findIndex((turn) => normalizeWhitespace(turn.text).includes(normQuote))
+  if (exactIdx !== -1) return exactIdx
+
+  // Fallback: match without punctuation differences
+  const stripPunct = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const cleanQuote = stripPunct(quote)
+  if (!cleanQuote) return -1
+  return turns.findIndex((turn) => stripPunct(turn.text).includes(cleanQuote))
+}
+
+export function buildFlexibleQuoteRegex(quote: string): RegExp | null {
+  const tokens = quote.trim().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return null
+  const pattern = tokens
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+')
+  return new RegExp(`(${pattern})`, 'gi')
+}
+
 export function buildDispatchDraft(record: InboxRecord, mode: DispatchMode): string {
   const property = record.property || 'Property TBC'
   const issue = record.issue || record.summary

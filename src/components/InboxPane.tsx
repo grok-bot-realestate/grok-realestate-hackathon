@@ -270,6 +270,14 @@ export default function InboxPane({
                           <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-[var(--lane)] uppercase">
                             {typeLabel(row.type)}
                           </span>
+                          {row.triage_source === 'grok' && (
+                            <span
+                              className="shrink-0 font-mono text-[10px] text-[var(--quiet)]"
+                              title={row.grok_model ? `Triaged by ${row.grok_model}` : 'Triaged by Grok'}
+                            >
+                              · Grok{row.evidence_quotes.length > 0 ? ` (${row.evidence_quotes.length})` : ''}
+                            </span>
+                          )}
                           {row.property && (
                             <span className="truncate text-xs text-[var(--quiet)]">
                               {row.property}

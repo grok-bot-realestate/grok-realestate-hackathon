@@ -42,6 +42,7 @@ export default function App() {
     toggleActionDone,
     addFollowUpAction,
     updateRecordPriority,
+    setLocalDraftReply,
   } = useInbox(phase === 'processing')
 
   const [filter, setFilter] = useState<InboxFilter>('all')
@@ -81,7 +82,10 @@ export default function App() {
 
   const effectiveSelectedId = useMemo(() => {
     if (selectedId && rows.some((r) => r.id === selectedId)) return selectedId
-    return visible[0]?.id ?? null
+    const preferred = visible.find(
+      (r) => r.triage_source !== 'empty' && r.summary !== 'Hung up at greeting',
+    )
+    return (preferred ?? visible[0])?.id ?? null
   }, [selectedId, rows, visible])
 
   // Auto-select newly arrived phone call after triage completes
@@ -394,6 +398,7 @@ export default function App() {
             onToggleAction={handleToggleAction}
             onAddFollowUp={handleAddFollowUp}
             onUpdatePriority={handleUpdatePriority}
+            onDraftSaved={setLocalDraftReply}
             onNotify={notify}
           />
         </div>
