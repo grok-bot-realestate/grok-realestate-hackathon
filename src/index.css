@@ -2,11 +2,13 @@
 
 :root {
   color-scheme: light;
-  --ink: #0f1c18;
-  --paper: #f3f6f2;
-  --accent: #1f6b4a;
-  --muted: #5c6b63;
-  font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ink: #1a2238;
+  --paper: #faf8f4;
+  --accent: #c85a3c;
+  --amber: #d99a2b;
+  --grey: #b8c0d0;
+  --muted: #5c6578;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: var(--ink);
@@ -14,7 +16,6 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -25,12 +26,27 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #d7ebe0 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #e8efe6 0%, transparent 50%),
-    var(--paper);
+  background: var(--paper);
 }
 
 #root {
   min-height: 100vh;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+@keyframes arrive {
+  from {
+    background: #f6e4dc;
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.row-fresh {
+  animation: arrive 5s ease-out;
 }
