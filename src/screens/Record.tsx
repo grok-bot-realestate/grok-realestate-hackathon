@@ -41,7 +41,7 @@ function Transcript({ text }: { text: string }) {
         return (
           <p key={`${index}-${line.slice(0, 24)}`} className="text-sm leading-6">
             {speaker && (
-              <span className="mr-2 font-medium text-[var(--muted)]">{speaker}</span>
+              <span className="mr-2 font-medium text-[var(--muted)]">{speaker} </span>
             )}
             <span className="text-[var(--ink)]">{body}</span>
           </p>

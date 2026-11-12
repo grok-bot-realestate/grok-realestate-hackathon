@@ -67,7 +67,7 @@ export default function Inbox({
           </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {kpi
-              ? `${kpi.calls} calls · ${kpi.out_of_hours_pct}% out of hours`
+              ? `${kpi.calls ?? 0} ${(kpi.calls ?? 0) === 1 ? 'call' : 'calls'} · ${kpi.out_of_hours_pct ?? 0}% out of hours`
               : 'London lettings · after-hours line'}
           </p>
         </div>
