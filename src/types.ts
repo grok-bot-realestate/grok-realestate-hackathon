@@ -11,6 +11,7 @@ export type CallRow = {
   weekday: string | null
   caller_initials: string | null
   transcript: string | null
+  raw?: Record<string, unknown> | null
 }
 
 export type ActionRow = {
@@ -46,9 +47,36 @@ export type Kpi = {
 
 export type InboxFilter =
   | 'all'
-  | 'ooh'
   | 'urgent'
+  | 'open'
+  | 'done'
+  | 'ooh'
   | 'maintenance'
   | 'viewing'
   | 'dwelly'
   | 'phone'
+
+export type SortMode = 'newest' | 'priority'
+
+export type RealtimeStatus = 'connecting' | 'live' | 'reconnecting' | 'offline'
+
+export type TranscriptTurn = {
+  speaker: 'assistant' | 'caller' | 'note'
+  label: string
+  text: string
+}
+
+export type LiveCaption = {
+  id: string
+  speaker: 'assistant' | 'caller'
+  text: string
+  timestamp: string
+}
+
+export type DispatchMode = 'contractor' | 'caller' | 'handover'
+
+export type ToastItem = {
+  id: string
+  tone: 'info' | 'success' | 'error'
+  message: string
+}

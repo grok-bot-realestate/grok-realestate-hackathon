@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as VapiNs from '@vapi-ai/web'
+import type { LiveCaption } from '../types'
 
 export type CallPhase = 'idle' | 'connecting' | 'live' | 'processing'
 
+type VapiEventName =
+  | 'call-start'
+  | 'call-end'
+  | 'speech-start'
+  | 'speech-end'
+  | 'volume-level'
+  | 'local-volume-level'
+  | 'message'
+  | 'error'
+
 type LineClient = {
   start: (assistantId: string) => Promise<unknown>
-  stop: () => void
-  on: (event: 'call-start' | 'call-end' | 'error', listener: (...args: unknown[]) => void) => void
-  removeListener: (
-    event: 'call-start' | 'call-end' | 'error',
-    listener: (...args: unknown[]) => void,
-  ) => void
+  stop: () => Promise<void> | void
+  setMuted: (mute: boolean) => void
+  isMuted: () => boolean
+  on: (event: VapiEventName, listener: (...args: unknown[]) => void) => void
+  removeListener: (event: VapiEventName, listener: (...args: unknown[]) => void) => void
 }
 
 function scrub(message: string): string {
@@ -48,15 +58,34 @@ export function useLineCall() {
   const vapiRef = useRef<LineClient | null>(null)
   const [phase, setPhase] = useState<CallPhase>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [muted, setMuted] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [volumeLevel, setVolumeLevel] = useState(0)
+  const [localVolumeLevel, setLocalVolumeLevel] = useState(0)
+  const [assistantSpeaking, setAssistantSpeaking] = useState(false)
+  const [captions, setCaptions] = useState<LiveCaption[]>([])
+  const [partialCaption, setPartialCaption] = useState<{
+    speaker: 'assistant' | 'caller'
+    text: string
+  } | null>(null)
+
   const ready = Boolean(
     import.meta.env.VITE_VAPI_PUBLIC_KEY && import.meta.env.VITE_VAPI_ASSISTANT_ID,
   )
 
   useEffect(() => {
     return () => {
-      vapiRef.current?.stop()
+      void vapiRef.current?.stop()
     }
   }, [])
+
+  useEffect(() => {
+    if (phase !== 'live') return
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((s) => s + 1)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [phase])
 
   useEffect(() => {
     if (phase !== 'processing') return
@@ -69,29 +98,100 @@ export function useLineCall() {
     const key = import.meta.env.VITE_VAPI_PUBLIC_KEY
     if (!key) throw new Error('The voice line is not configured in this build.')
     const vapi = new (resolveCtor(VapiNs))(key)
-    const onStart = () => {
+
+    vapi.on('call-start', () => {
       setPhase('live')
       setError(null)
-    }
-    const onEnd = () => setPhase('processing')
-    const onFail = (err: unknown) => {
+      setMuted(false)
+      setElapsedSeconds(0)
+      setVolumeLevel(0)
+      setLocalVolumeLevel(0)
+      setAssistantSpeaking(false)
+      setCaptions([])
+      setPartialCaption(null)
+    })
+
+    vapi.on('call-end', () => {
+      setPhase('processing')
+      setAssistantSpeaking(false)
+      setVolumeLevel(0)
+      setLocalVolumeLevel(0)
+      setPartialCaption(null)
+    })
+
+    vapi.on('speech-start', () => {
+      setAssistantSpeaking(true)
+    })
+
+    vapi.on('speech-end', () => {
+      setAssistantSpeaking(false)
+    })
+
+    vapi.on('volume-level', (vol: unknown) => {
+      if (typeof vol === 'number' && Number.isFinite(vol)) {
+        setVolumeLevel(Math.max(0, Math.min(1, vol)))
+      }
+    })
+
+    vapi.on('local-volume-level', (vol: unknown) => {
+      if (typeof vol === 'number' && Number.isFinite(vol)) {
+        setLocalVolumeLevel(Math.max(0, Math.min(1, vol)))
+      }
+    })
+
+    vapi.on('message', (raw: unknown) => {
+      if (!raw || typeof raw !== 'object') return
+      const msg = raw as Record<string, unknown>
+      if (msg.type === 'transcript') {
+        const text = typeof msg.transcript === 'string' ? msg.transcript.trim() : ''
+        if (!text) return
+        const speaker: 'assistant' | 'caller' = msg.role === 'user' ? 'caller' : 'assistant'
+        const transcriptType = msg.transcriptType === 'final' ? 'final' : 'partial'
+        if (transcriptType === 'partial') {
+          setPartialCaption({ speaker, text })
+        } else {
+          setPartialCaption(null)
+          setCaptions((prev) => {
+            const last = prev[prev.length - 1]
+            if (last && last.speaker === speaker && last.text === text) return prev
+            return [
+              ...prev,
+              {
+                id: `${Date.now()}-${prev.length}`,
+                speaker,
+                text,
+                timestamp: new Date().toISOString(),
+              },
+            ]
+          })
+        }
+      } else if (msg.type === 'speech-update') {
+        if (msg.role === 'assistant') {
+          setAssistantSpeaking(msg.status === 'started')
+        }
+      }
+    })
+
+    vapi.on('error', (err: unknown) => {
       setError(errorText(err))
+      setAssistantSpeaking(false)
       setPhase((current) => (current === 'live' ? 'processing' : 'idle'))
-    }
-    vapi.on('call-start', onStart)
-    vapi.on('call-end', onEnd)
-    vapi.on('error', onFail)
+    })
+
     vapiRef.current = vapi
     return vapi
   }
 
-  async function start() {
+  const start = useCallback(async () => {
     const assistantId = import.meta.env.VITE_VAPI_ASSISTANT_ID
     if (!assistantId) {
       setError('The voice line is not configured in this build.')
       return
     }
     setError(null)
+    setElapsedSeconds(0)
+    setCaptions([])
+    setPartialCaption(null)
     setPhase('connecting')
     try {
       await client().start(assistantId)
@@ -99,11 +199,38 @@ export function useLineCall() {
       setPhase('idle')
       setError(errorText(err))
     }
-  }
+  }, [])
 
-  function hangUp() {
-    vapiRef.current?.stop()
-  }
+  const hangUp = useCallback(() => {
+    void vapiRef.current?.stop()
+  }, [])
 
-  return { phase, error, ready, start, hangUp }
+  const toggleMute = useCallback(() => {
+    const vapi = vapiRef.current
+    if (!vapi) return
+    const next = !vapi.isMuted()
+    vapi.setMuted(next)
+    setMuted(next)
+  }, [])
+
+  const finishProcessing = useCallback(() => {
+    setPhase((current) => (current === 'processing' ? 'idle' : current))
+  }, [])
+
+  return {
+    phase,
+    error,
+    ready,
+    muted,
+    elapsedSeconds,
+    volumeLevel,
+    localVolumeLevel,
+    assistantSpeaking,
+    captions,
+    partialCaption,
+    start,
+    hangUp,
+    toggleMute,
+    finishProcessing,
+  }
 }
