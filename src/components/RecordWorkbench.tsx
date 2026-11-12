@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { fetchCogneePrecedents, getCachedCogneePrecedents } from '../lib/cognee'
 import {
   buildDispatchDraft,
   buildFlexibleQuoteRegex,
@@ -18,6 +19,7 @@ import {
 } from '../lib/format'
 import { requestGrokDispatch } from '../lib/grok'
 import type {
+  CogneeSearchResult,
   DispatchMode,
   EvidenceQuote,
   GrokDispatchResult,
@@ -127,6 +129,59 @@ export default function RecordWorkbench({
   const [dispatchError, setDispatchError] = useState<string | null>(null)
   const [useSavedDraftOnDefault, setUseSavedDraftOnDefault] = useState(true)
   const [activeEvidence, setActiveEvidence] = useState<ActiveEvidence | null>(null)
+
+  const canAutoSearchCognee = Boolean(
+    row && row.triage_source !== 'empty' && row.summary !== 'Hung up at greeting',
+  )
+  const [cogneeState, setCogneeState] = useState<{
+    status: 'idle' | 'loading' | 'ready' | 'error'
+    data: CogneeSearchResult | null
+    error: string | null
+  }>(() => {
+    if (!row) return { status: 'idle', data: null, error: null }
+    const cached = getCachedCogneePrecedents(row.id)
+    if (cached) return { status: 'ready', data: cached, error: null }
+    return {
+      status: canAutoSearchCognee ? 'loading' : 'idle',
+      data: null,
+      error: null,
+    }
+  })
+
+  useEffect(() => {
+    if (!row || !canAutoSearchCognee) return
+    if (getCachedCogneePrecedents(row.id)) return
+
+    const controller = new AbortController()
+    fetchCogneePrecedents({ recordId: row.id, limit: 3, signal: controller.signal })
+      .then((data) => {
+        setCogneeState({ status: 'ready', data, error: null })
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        setCogneeState({
+          status: 'error',
+          data: null,
+          error: err instanceof Error ? err.message : 'Could not load Dwelly precedents',
+        })
+      })
+    return () => controller.abort()
+  }, [row, canAutoSearchCognee])
+
+  async function handleLoadCognee(force = false) {
+    if (!row) return
+    setCogneeState((prev) => ({ status: 'loading', data: prev.data, error: null }))
+    try {
+      const data = await fetchCogneePrecedents({ recordId: row.id, limit: 3, force })
+      setCogneeState({ status: 'ready', data, error: null })
+    } catch (err) {
+      setCogneeState({
+        status: 'error',
+        data: null,
+        error: err instanceof Error ? err.message : 'Could not load Dwelly precedents',
+      })
+    }
+  }
 
   const transcriptSectionRef = useRef<HTMLElement | null>(null)
   const turnRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -627,6 +682,122 @@ export default function RecordWorkbench({
               </div>
             )}
           </div>
+        )}
+      </section>
+
+      {/* Similar Dwelly Cases (Cognee Cloud) */}
+      <section
+        aria-label="Similar Dwelly Cases"
+        className="border-b border-[var(--line)] bg-white/40 px-5 py-4 sm:px-7"
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <h3 className="font-mono text-[11px] font-medium tracking-[0.16em] text-[var(--quiet)] uppercase">
+              Similar Dwelly Cases
+            </h3>
+            <span className="font-mono text-[11px] font-medium text-[var(--lane)]">
+              · Cognee Cloud
+            </span>
+            <span className="font-mono text-[11px] text-[var(--quiet)]">
+              · {cogneeState.data?.dataset ?? 'morning_lane_dwelly'}
+              {cogneeState.data?.latency_ms ? ` · ${cogneeState.data.latency_ms}ms` : ''}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handleLoadCognee(cogneeState.status === 'ready')}
+            disabled={cogneeState.status === 'loading'}
+            className="border border-[var(--line-strong)] bg-white/75 px-2.5 py-1 font-mono text-[11px] text-[var(--ink)] transition hover:border-[var(--ink)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {cogneeState.status === 'loading'
+              ? 'Searching Cognee…'
+              : cogneeState.status === 'ready'
+                ? 'Refresh'
+                : 'Find Dwelly precedents'}
+          </button>
+        </div>
+
+        {cogneeState.status === 'loading' && !cogneeState.data && (
+          <div className="grid gap-2.5 md:grid-cols-3" aria-live="polite">
+            {[0, 1, 2].map((idx) => (
+              <div key={idx} className="space-y-2 border border-[var(--line)] bg-white/60 p-3">
+                <div className="h-2.5 w-24 animate-pulse bg-[var(--line)]" />
+                <div className="h-3.5 w-4/5 animate-pulse bg-[var(--line)]" />
+                <div className="h-10 w-full animate-pulse bg-[var(--line)]" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {cogneeState.status === 'error' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border border-[var(--urgent)]/25 bg-white/75 px-3 py-2.5">
+            <span className="text-xs text-[var(--urgent)]">
+              {cogneeState.error ?? 'Could not fetch Dwelly precedents.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleLoadCognee(true)}
+              className="border border-[var(--line-strong)] bg-white px-2.5 py-1 font-mono text-[11px] text-[var(--ink)] hover:border-[var(--ink)]"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {cogneeState.status === 'idle' && (
+          <p className="text-xs text-[var(--quiet)]">
+            Click <span className="font-mono text-[var(--ink)]">Find Dwelly precedents</span> to query Cognee Cloud across 50 historical Dwelly cases.
+          </p>
+        )}
+
+        {cogneeState.status === 'ready' && cogneeState.data && (
+          cogneeState.data.results.length > 0 ? (
+            <div className="grid gap-2.5 md:grid-cols-3">
+              {cogneeState.data.results.map((item) => {
+                const matchLabel =
+                  item.similarity !== null
+                    ? `${Math.round(item.similarity * 100)}% match`
+                    : item.score !== null
+                      ? `score ${item.score.toFixed(2)}`
+                      : null
+                return (
+                  <article
+                    key={item.id}
+                    className="flex flex-col justify-between border border-[var(--line)] bg-white/75 p-3"
+                  >
+                    <div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-[var(--lane)] uppercase">
+                          {item.case_id ?? 'dwelly'}
+                        </span>
+                        {(matchLabel || item.status) && (
+                          <span className="font-mono text-[10px] text-[var(--quiet)]">
+                            {[matchLabel, item.status].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-[var(--ink)]">
+                        {item.title ?? item.property ?? 'Dwelly case precedent'}
+                      </p>
+                      <p className="mt-1.5 line-clamp-3 text-xs leading-5 text-[var(--ink-soft)]">
+                        {item.excerpt}
+                      </p>
+                    </div>
+                    {(item.outcome || item.property) && (
+                      <p className="mt-2.5 border-t border-[var(--line)] pt-2 font-mono text-[10px] leading-4 text-[var(--quiet)]">
+                        {item.outcome ? `Outcome: ${item.outcome}` : item.property}
+                      </p>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--quiet)]">
+              No matching Dwelly precedents returned for this record.
+            </p>
+          )
         )}
       </section>
 

@@ -213,6 +213,11 @@ export function useLineCall() {
     setMuted(next)
   }, [])
 
+  const beginProcessing = useCallback(() => {
+    setError(null)
+    setPhase('processing')
+  }, [])
+
   const finishProcessing = useCallback(() => {
     setPhase((current) => (current === 'processing' ? 'idle' : current))
   }, [])
@@ -231,6 +236,7 @@ export function useLineCall() {
     start,
     hangUp,
     toggleMute,
+    beginProcessing,
     finishProcessing,
   }
 }

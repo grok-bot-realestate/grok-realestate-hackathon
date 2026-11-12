@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import type { DemoScriptId } from '../types'
 
 type DemoScript = {
-  id: string
+  id: DemoScriptId
   tag: string
   urgency: 'urgent' | 'today' | 'week'
   title: string
@@ -47,6 +48,8 @@ type Props = {
   open: boolean
   onClose: () => void
   onStartCall: () => void
+  onSimulateCall: (scriptId: DemoScriptId) => void
+  simulating: boolean
   callReady: boolean
   isCallActive: boolean
   onCopied: (label: string) => void
@@ -56,6 +59,8 @@ export default function DemoPromptsPopover({
   open,
   onClose,
   onStartCall,
+  onSimulateCall,
+  simulating,
   callReady,
   isCallActive,
   onCopied,
@@ -87,7 +92,7 @@ export default function DemoPromptsPopover({
             Live Voice Test · Caller Scripts
           </p>
           <p className="mt-0.5 text-xs text-[var(--quiet)]">
-            Say any of these aloud after clicking Call the line — Morning Lane handles safety checks, digit readback, and Grok evidence triage in ~10s.
+            Say any of these aloud after clicking Call the line — or use Simulate call for an instant no-mic Grok triage run.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -127,13 +132,24 @@ export default function DemoPromptsPopover({
                 >
                   {item.tag}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void copyScript(item)}
-                  className="font-mono text-[11px] text-[var(--lane)] transition hover:text-[var(--lane-deep)]"
-                >
-                  {copiedId === item.id ? 'Copied' : 'Copy'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={simulating || isCallActive}
+                    onClick={() => onSimulateCall(item.id)}
+                    className="font-mono text-[11px] font-medium text-[var(--ink)] underline decoration-[var(--line-strong)] underline-offset-4 transition hover:text-[var(--lane)] disabled:cursor-not-allowed disabled:opacity-45"
+                    title="Send this transcript straight through Grok triage into the Inbox"
+                  >
+                    {simulating ? 'Triaging…' : 'Simulate call'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyScript(item)}
+                    className="font-mono text-[11px] text-[var(--lane)] transition hover:text-[var(--lane-deep)]"
+                  >
+                    {copiedId === item.id ? 'Copied' : 'Copy script'}
+                  </button>
+                </div>
               </div>
               <p className="mt-1.5 text-sm font-medium text-[var(--ink)]">{item.title}</p>
               <p className="mt-2 text-xs leading-5 text-[var(--ink)]/85">“{item.script}”</p>

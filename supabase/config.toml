@@ -2,3 +2,10 @@ project_id = "xjzqqeyybdzhykndfvjd"
 
 [functions.call-ended]
 verify_jwt = false
+
+[functions.cognee-search]
+verify_jwt = false
+
+[functions.demo-call]
+verify_jwt = false
+

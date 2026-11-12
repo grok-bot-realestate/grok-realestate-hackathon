@@ -107,3 +107,26 @@ export type ToastItem = {
   tone: 'info' | 'success' | 'error'
   message: string
 }
+
+export type CogneePrecedent = {
+  id: string
+  case_id: string | null
+  title: string | null
+  property: string | null
+  status: string | null
+  outcome: string | null
+  excerpt: string
+  score: number | null
+  similarity: number | null
+  dataset: string
+}
+
+export type CogneeSearchResult = {
+  ok: boolean
+  dataset: string
+  query: string
+  results: CogneePrecedent[]
+  latency_ms: number
+}
+
+export type DemoScriptId = 'boiler' | 'viewing' | 'arrears'

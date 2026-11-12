@@ -6,9 +6,10 @@ import RecordWorkbench from './components/RecordWorkbench'
 import ShortcutsModal from './components/ShortcutsModal'
 import TelemetryStrip from './components/TelemetryStrip'
 import { matchesFilter, matchesSearch, primaryAction, priorityRank } from './lib/format'
+import { triggerDemoCall } from './lib/demoCall'
 import { useInbox } from './lib/inbox'
 import { useLineCall } from './lib/lineCall'
-import type { InboxFilter, Priority, SortMode, ToastItem } from './types'
+import type { DemoScriptId, InboxFilter, Priority, SortMode, ToastItem } from './types'
 
 export default function App() {
   const {
@@ -25,6 +26,7 @@ export default function App() {
     start: startCall,
     hangUp: hangUpCall,
     toggleMute,
+    beginProcessing,
     finishProcessing,
   } = useLineCall()
   const {
@@ -51,6 +53,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'inbox' | 'record'>('inbox')
   const [demoOpen, setDemoOpen] = useState(false)
+  const [simulatingCall, setSimulatingCall] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
@@ -112,6 +115,25 @@ export default function App() {
     setSelectedId(id)
     setMobileView('record')
   }, [])
+
+  const handleSimulateCall = useCallback(
+    async (scriptId: DemoScriptId) => {
+      if (simulatingCall || phase !== 'idle') return
+      setDemoOpen(false)
+      setSimulatingCall(true)
+      beginProcessing()
+      try {
+        await triggerDemoCall(scriptId)
+        await reload()
+      } catch (err) {
+        finishProcessing()
+        notify('error', err instanceof Error ? err.message : 'Simulated call failed')
+      } finally {
+        setSimulatingCall(false)
+      }
+    },
+    [simulatingCall, phase, beginProcessing, reload, finishProcessing, notify],
+  )
 
   const handleToggleAction = useCallback(
     async (actionId: string, nextDone: boolean) => {
@@ -321,6 +343,8 @@ export default function App() {
             setDemoOpen(false)
             void startCall()
           }}
+          onSimulateCall={(scriptId) => void handleSimulateCall(scriptId)}
+          simulating={simulatingCall}
           callReady={callReady}
           isCallActive={phase !== 'idle'}
           onCopied={(msg) => notify('success', msg)}
